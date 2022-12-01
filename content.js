@@ -20,79 +20,93 @@
         var hotkeyNode = document.createTextNode('Hotkeys loading...');
         node.setAttribute('id', 'DebateTemplateHotkeysStatus')
         node.appendChild(hotkeyNode)
-        document.querySelector("#docs-titlebar-container > div.docs-titlebar-buttons").prepend(node)
+        document.getElementById("docs-titlebar-container").querySelector("div.docs-titlebar-buttons").prepend(node)
         observer.disconnect()
     });
-    observer.observe(document.querySelector("#docs-titlebar-container > div.docs-titlebar-buttons"), { childList: true })
+    observer.observe(document.getElementById("docs-titlebar-container").querySelector("div.docs-titlebar-buttons"), { childList: true })
     
-    // add hotkeys after window loads
-    window.addEventListener('load', function () {
+    var loadHotkeys = function () {
         // execute a click in the middle of the given element
         var execClick = (element) => {
             var box = element.getBoundingClientRect()
-            var coordX = box.left + (box.right - box.left) / 2
-            var coordY = box.top + (box.bottom - box.top) / 2
-            // ^ get coords of middle of element
+            var coordX = (box.left + box.right) / 2
+            var coordY = (box.bottom + box.top) / 2
             element.dispatchEvent(new MouseEvent("mousedown", {
-                view: window,
                 bubbles: true,
                 cancelable: true,
                 clientX: coordX,
-                clientY: coordY,
-                button: 0
+                clientY: coordY
             }));
             element.dispatchEvent(new MouseEvent("mouseup", {
-                view: window,
                 bubbles: true,
                 cancelable: true,
                 clientX: coordX,
-                clientY: coordY,
-                button: 0
+                clientY: coordY
             }));
             element.dispatchEvent(new MouseEvent("click", {
-                view: window,
                 bubbles: true,
                 cancelable: true,
                 clientX: coordX,
-                clientY: coordY,
-                button: 0
+                clientY: coordY
             }));
         }
 
-        execClick(document.getElementById("docs-extensions-menu")) // click open menu to propagate the divs of the extension
-        execClick(document.getElementById(appscriptSecret))
-        execClick(document.getElementById("docs-extensions-menu")) // close the menu that was just opened
-
-        // find the verbatim function divs: 
-        let functionDivs = document.querySelectorAll(`body > div > [id^=${appscriptSecret}]`);
-
-        // create a map of function labels to the function element to click on
-        var functionMap = {}
-        for (var functionElement of functionDivs) {
-            try {
-                var functionLabel = functionElement.children[0].textContent
-                functionMap[functionLabel] = functionElement
-            } catch (e) { }
-        }
-
-        document.getElementById('DebateTemplateHotkeysStatus').innerHTML = "Hotkeys loaded!"
-        this.setTimeout(function() {
-            var status = document.getElementById('DebateTemplateHotkeysStatus')
-            status.parentNode.removeChild(status)
-        }, 3000)
-
-        // actual keypress handling, add key listeners to the textevent target iframe
-        var targets = document.getElementsByClassName("docs-texteventtarget-iframe");
-        targets[0].contentDocument.childNodes[0].addEventListener('keydown', function (event) {
-
-            if (event.code.includes('F') && keyMaps[event.code] != undefined) {
-                event.preventDefault()
-                // click on the function element
-                execClick(document.getElementById("docs-extensions-menu"))
-                execClick(document.getElementById(appscriptSecret))
-                execClick(functionMap[keyMaps[event.code]])
+        var promise = new Promise(resolve => {
+            if (document.getElementById(appscriptSecret)) {
+                return resolve(document.getElementById(appscriptSecret));
             }
-        })
+            const observer = new MutationObserver(mutations => {
+                if (document.getElementById(appscriptSecret)) {
+                    resolve(document.getElementById(appscriptSecret));
+                    observer.disconnect();
+                }
+            });
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+        });
+        promise.then(appscriptElement => {
+            execClick(document.getElementById("docs-extensions-menu")) // click open menu to propagate the divs of the extension
+            execClick(appscriptElement)
+            execClick(document.getElementById("docs-extensions-menu")) // close the menu that was just opened
+            
+            // all possible divs in body that may contain the extension function custom menu
+            var funcMap = {}
+            for (var func of Array.from(document.querySelectorAll(`body > div > [id^="${appscriptSecret}"]`))) {
+                try {
+                    funcMap[func.textContent] = func
+                } catch (e) {
+                    console.warn(e)
+                }
+            }
 
-    }, false);
+            document.getElementById('DebateTemplateHotkeysStatus').innerHTML = "Hotkeys loaded!"
+            // remove the status after ten seconds
+            this.setTimeout(function() {
+                var status = document.getElementById('DebateTemplateHotkeysStatus')
+                status.parentNode.removeChild(status)
+            }, 10000)
+
+            // actual keypress handling, add key listeners to the textevent target iframe
+            var targets = document.getElementsByClassName("docs-texteventtarget-iframe");
+            targets[0].contentDocument.childNodes[0].addEventListener('keydown', function (event) {
+                var eventCode = event.code
+                if (event.ctrlKey && event.altKey && event.keyCode.isDigit()) {
+                    eventCode = "F" + event.keyCode
+                    console.info("Treating " + event + " as " + eventCode)
+                }
+                if (eventCode.includes('F') && keyMaps[eventCode]) {
+                    event.preventDefault()
+                    // click on the function element
+                    execClick(document.getElementById("docs-extensions-menu"))
+                    execClick(document.getElementById(appscriptSecret))
+                    if (!funcMap[keyMaps[eventCode]]) console.error(keyMaps[eventCode] + " does not have an associated element")
+                    execClick(funcMap[keyMaps[eventCode]])
+                }
+            })
+        })
+    }
+    // add hotkeys after window loads
+    window.addEventListener('load', loadHotkeys, false);
 })();
